@@ -1,0 +1,253 @@
+\section{Main programs}
+\protect\label{section:mainprogs}
+
+In this part is documented the programs more or less in their final form. Some
+of the original programs were written in Perl but all of the later programs are
+written in \py.
+
+The graphical programs are written using Qt4 and later Qt5.\footnote{The extra
+features of Qt5 are not used anywhere, but the {\py} \texttt{import} statements
+are different.} This currently is offered under a licensing agreement allowing
+non-commercial use, but this will have to be installed if it is intended to
+develop the software further.
+
+The ``command line'' programs written in {\py} use the \texttt{argparse} library
+for decoding arguments. Wherever possible the same arguments with the same
+syntax are used and library modules are used to provide these.
+
+\subsection{A note on database usage}
+\protect\label{section:databaseusage}
+
+There are 4 databases in use by the software, the credentials of which are all
+given appropriately in \texttt{\~/lib/dbcred.ini} as described in section
+\ref{section:mysqlpw}.
+
+\begin{description}
+\item[\tt remfits] is the name of the database on my home machine, possibly via
+remote access to my home machine).
+\item[\tt cluster] is the name of the database on the cluster, possibly via an
+SSH tunnel.
+\item[\tt rdots] is the name of the database on the Red Dots project holding the
+observation entries.
+\item[\tt rdotsquery] is the name of the database on the Red Dots project
+holding the flat and bias entries.
+\end{description}
+
+All of the programs that access the database use a common interface (which is
+provided for in the module \texttt{remdefaults}).
+
+Using the \texttt{argparse} module, each module uses the database, includes the
+following:
+
+\begin{verbatim}
+import argparse
+import remdefaults
+
+....
+
+parsearg = argparse.ArgumentParser(description='Program description',
+            formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+
+remdefaults.parseargs(parsearg)
+.... (add other arguments)
+
+resargs = vars(parsearg.parse_args())
+remdefaults.getargs(resargs)
+\end{verbatim}
+
+The function of this is to insert the following into the help message produced
+by running the program with the \texttt{-h} option.
+
+\begin{verbatim}
+Program description
+
+options:
+  -h, --help            show this help message and exit
+  --database DATABASE   Database to use (default: remfits)
+\end{verbatim}
+
+The default name (in this instance \texttt{remfits} is obtained from:
+
+\begin{enumerate}
+  \item The environment variable \texttt{REMDB} if it exists.
+  \item Otherwise the ``hostname'' is examined and \texttt{remfits} is selected
+  it is my machine, otherwise \texttt{cluster} is selected.
+\end{enumerate}
+
+This means that if you want to explicitly select the database you can provide it
+with the option \texttt{\dmin database xyz}, or you can set it up as an environment
+variable \texttt{REMDB}, the former taking priority.
+
+The logic for this is all contained in the \texttt{remdefaults} module which
+should be amended if necessary to adjust the defaults.
+
+\subsection{Command line programs}
+\protect\label{section:commandline}
+
+``Command line'' programs also include those invoked in ``batch'' style using
+``cron'' for a nightly run.
+
+As mentioned above, the {\py} command line programs use the \texttt{argparse}
+library. This has the main benefit that documentation is more or less automatic
+and all programs take the \texttt{-h} option (or \texttt{\dmin help}) to display
+all the other options and exit.
+
+\bomb There is a bug in the library, in that some options which take a string
+which can be a number in some cases (particularly a range) go wrong with negative
+numbers, for example if an argument is a range of the form
+\textit{min:max} and the \textit{min} value can be negative, then you might want
+the argument to be something like  \texttt{-10:20} and the library may be
+confused by the leading minus sign. To overcome this, range type arguments allow
+a single letter to precede the minus sign thus \texttt{m-10:20}. This does not
+happen often, but there are cases where this crops up.
+
+Perl programs use perl library routines which do not have this bug, however
+their options are much more limited.
+
+Standard arguments which apply to nearly all routines are as follows:
+
+\begin{verbatim}
+  -h, --help           show this help message and exit
+  --database DATABASE  Database to use (default: remfits)
+  --logfile LOGFILE    File for log output if not stderr (default: None)
+  --verbose            Print out summary of what has been done (default: ....)
+  --debug              Debug queries (default: False)
+\end{verbatim}
+
+As explained above, the default database depends upon which computer the program
+is run on or whether the environment variable \texttt{REMDB} is set.
+
+The log file is where error messages (and commentary given by
+\texttt{\dmin verbose}) is displayed. It might be required to send this to a file.
+
+Some of the database queries are complicated and many programs provide a
+\texttt{\dmin debug} option to print them out before doing the operation.
+
+\subsubsection{Daily CRON routine}
+\protect\label{section:cronroutine}
+
+I use the following as a daily routine to update the database. This is done in
+mid-afternoon (to avoid the time when the Red Dots database is updated).
+
+\begin{verbatim}
+#! /bin/bash
+
+ANACONDA=/usr/local/anaconda3
+ANACONDALIB=$ANACONDA/lib/python3.8
+ANACPP=$ANACONDALIB:$ANACONDALIB/site-packages:$PYTHONPATH
+
+PERLLIB=/home/jmc/lib/perllib
+PYTHONPATH=/home/jmc/lib/pythonlib
+ASTRO=/home/jmc/src/astro
+PATH=$ASTRO/progs/Numpy/remfits:$ASTRO/progs/Numpy/remfits2:/home/jmc/bin:$ASTRO/bin:$PATH
+REMTMP=/home/jmc/src/astro/tmp
+
+export PERLLIB PYTHONPATH PATH REMTMP
+
+if ! copy_new_rows.py
+then
+	echo Nothing doing
+	exit 0
+fi
+
+load_new_obs.py
+load_new_iforbs.py
+get_new_fits_params.py --trim 90
+
+bary_dates.py
+lexi:
+
+\end{verbatim}
+
+After appropriately setting up some environment variables for the various
+software and ensuring the \texttt{\$PATH} includes the binaries, certain items
+of software are then run to load new rows of observations, bias and flat files.
+These programs are all described below.
+
+Note that if nothing has been added to the Red Dots database, the first run
+program \texttt{copy\_new\_rows.py} will return a non-zero exit code so that the
+script can report \texttt{Nothing doing} and exit.
+
+In the following sections the functions of these programs are given.
+
+\subsubsubsection{Copy\_new\_rows}
+\protect\label{section:copynewrows}
+
+The program \texttt{copy\_new\_rows.py} identifies any newly added rows in the
+Red Dots databases and copies them to the in-house database, specifically the
+tables \texttt{obsinf} and \texttt{iforbinf}.
+
+The assumption made is like the \texttt{ind} fields in the database, the field
+\texttt{serial} fields in the two Red Dots databases for observations and the
+individual flat and bias files are monotonically increasing. So by searching for
+the maximum values of \texttt{serial} held, any rows with fields greater than
+this new rows (observations, flat or bias files) cam be identified.
+
+\bomb Note that if this assumption is incorrect it is possible that new rows
+will be missed.
+
+The program is normally intended to run without options as in the nightly run
+example in the previous section \ref{section:cronroutine}.
+
+Options to \texttt{copy\_new\_rows.py} are as follows:
+
+\begin{description}
+\item[\tt \dmin help] display options and exit.
+\item[\tt \dmin database] select in-house database to use, default is according
+to computer run on.
+\item[\tt \dmin logfile \textit{file}] specify a file to output messages to if
+not standard error.
+\item[\tt \dmin verbose] This option indicates how many rows, i.e. observations and
+flat/bias files have been loaded. (Not including the FITS files.). This is on by
+default and specifying it turns it off.
+\item[\tt \dmin debug] Prints out database queries on standard error or whatever
+is specified by \texttt{\dmin logfile}.
+\end{description}
+
+The program returns a non-zero exit code if no rows are loaded, which is used in
+the ``cron'' routine.
+
+\subsubsubsection{Load\_new\_obs}
+\protect\label{section:loadnewobs}
+
+The program \texttt{load\_new\_obs.py} loads any new FITS files corresponding to
+the new rows loaded by \texttt{copy\_new\_rows.py}.
+
+The program is normally intended to run without options as in the nightly run
+example in the earlier section \ref{section:cronroutine}.
+
+Options to \texttt{load\_new\_obs.py} are as follows:
+
+\begin{description}
+\item[\tt \dmin help] display options and exit.
+\item[\tt \dmin database] select in-house database to use, default is according
+to computer run on.
+\item[\tt \dmin logfile \textit{file}] specify a file to output messages to if
+not standard error.
+\item[\tt \dmin nodates] Do not restrict loaded files by date.
+\item[\tt \dmin dates \textit{range}] Specify dates to load files for, this can
+be given as \textit{start:end} thus \texttt{1/1/2017:31/12/2022}. The start or
+end date may be omitted to omit the limitation to dates after or before a date.
+The default if no date s given is \texttt{1/1/2017}.
+\item[\tt \dmin allmonth \textit{month}] is an alternative way of specifying the
+dates as \textit{year-month} for example \texttt{2019-9} for September 2019.
+This selects all dates in the given month.
+\item[\tt \dmin remir] indicates that REMIR files should be loaded.
+\item[\tt \dmin verbose] gives a summary of what has been loaded (on by
+default).
+\item[\tt \dmin targets] indicates that files for the 3 Red Dots targets \prox,
+{\bstar} and {\ross} should be loaded. On by default.
+\item[\tt \dmin objects \textit{objname \ldots}] gives one or more objects in
+addition to the targets, if requested.
+\item[\tt \dmin debug] Prints out database queries on standard error or whatever
+is specified by \texttt{\dmin logfile}.
+\end{description}
+
+Note that only one of \texttt{\dmin nodates}, \texttt{\dmin dates} and
+\texttt{\dmin allmonth} should be given.
+
+Also note the logic of \texttt{\dmin targets} and \texttt{\dmin objects}.
+Selection of the targets is on by default, so that \texttt{\dmin objects~xyz}
+will load files for the targets and for \texttt{xyz}. If you only want files for
+\texttt{xyz} you should specify \texttt{\dmin targets} as well, to turn off
+selection of targets.

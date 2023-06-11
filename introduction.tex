@@ -1,0 +1,541 @@
+\section{Introduction}
+\protect\label{section:intro}
+
+This document describes the database and the Python software created to assist
+in the analysis of the data from the Red Dots project.
+
+This represents where I got to to the end of May 2023, when I had to withdraw
+from the PhD course due to ill-health, note that some parts are incomplete or
+``in pieces'' with further development intended.
+
+The document assumes some familiarity with {\py} and also \numpy, {\scipy} and
+\mpl. A little familiarity with {\mysql} is helpful, but attempts are made to
+explain the functionality where needed. Qt5 is also used to provide GUI-style
+software in some places.
+
+\subsection{A note on directories and \texttt{\$PATH} variables}
+\protect\label{section:pathvars}
+
+\textbf{Please note that this scheme reflects what I have worked with and
+should be easy to change if required, but you may have to change a few
+``hardwired'' path names etc in a few places.}
+
+The directory structure, starting from the home directory, used by this, is as
+follows.
+\vspace{10pt}
+\dirtree{%
+.1 (Home directory)/.
+.2 bin/.
+.3 python.
+.2 lib/.
+.3 dbcred.ini.
+.3 perllib/.
+.3 pythonlib/.
+.2 src/.
+.3 astro/.
+.4 progs/.
+.5 Numpy/.
+.6 gsgraphics/.
+.6 remfits/.
+.6 remfits2/.
+.2 .jmc/.
+.3 remgeom.
+.3 searchparams.
+}
+
+The \texttt{Numpy} level is redundant, but has got fossilised and is hardly worth
+changing now.
+
+The function of these various directories is as follows:
+
+\begin{description}
+\item[bin] Is a directory I always have for holding programs and scripts I like
+to work with, not just this project. It is one of the first entries on my
+\texttt{\$PATH} variable.
+\item[python] is an executable script for invoking the required version of
+Python. This is explained later after the section relating to installing \anac,
+section \ref{section:pyinvocation}.
+\item[lib] Is a directory of reference material not necessarily just for this
+project or even for the university.
+\item[dbcred.ini] Is a file of credentials for accessing databases (user name
+and passwords). It probably wants to be restricted in access.
+\item[perllib] Is a library of Perl modules. not necessarily just for this
+project or even for the university.
+\item[pythonlib] Is a library of {\py} modules. not necessarily just for this
+project or even for the university.
+\item[src] Contains source modules I am working on, not necessarily all for
+this project or even for the university.
+\item[astro] Contains material I am working on for the university, for this and
+other projects.
+\item[progs] Contains programs.
+\item[gsgraphics] Contains GUI programs, It should be on your \texttt{\$PATH}.
+\item[remfits] Contains shell-level or internal programs. It should be on your
+\texttt{\$PATH}.
+\item[remfits2] Contains more shell-level or internal programs written later in
+the most part. It should be on your \texttt{\$PATH}.
+\item[.jmc] Contains configuration data.
+\item[remgeom] Contains configuration data for image display (as an XML file).
+\item[searchparams] Contains search parameter data (as an XML file).
+\end{description}
+
+\subsection{Software requirements}
+\protect\label{section:softrequrements}
+
+The software required is:
+
+\begin{enumerate}
+  \item \py, including \numpy, {\scipy} and \mpl. This is probably best
+  provided by {\anac} as described in Section \ref{section:anaconda} as all the
+  necessary libraries such as {\numpy} and {\scipy} will be included
+  automatically. Some of the routines in the older versions provided by the
+  University machines or standard Linux distributions are not sufficiently
+  up-to-date.
+  \item {\mysql} or a clone such as \maria. Nothing so esoteric or incompatible
+  between the versions is assumed, originally ``views'' were used but these did
+  not translate in \maria.\footnote{Although this may have been fixed in a
+  later release, I haven't tried as I am not using them now.}
+  \item Qt version 5. The software is written to work using Qt version 4, but
+  the {\py} ``import'' statements will have to be altered. You will probably need
+  ``designer'' as well.
+\end{enumerate}
+
+\subsubsection{Installing \anac}
+\protect\label{section:anaconda}
+
+\textbf{Please note this section contains some of my own opinions gleaned from
+my own experience, some people may disagree with some or all of this, but it is
+intended to be helpful.}
+
+First you need to download the latest version of {\anac} from
+\texttt{https://www.anaconda.com}, This is changed frequently, so you may want
+to revisit it. (It is possible to upgrade but problems can arise if versions
+are mixed.)
+
+The place in which {\anac} is installed may depend on what access you have to
+your machine. On my own machine, where I have superuser access, I load {\anac} into
+\texttt{/usr/local/anaconda3}, so that it is available to all possible users on
+the machine without anyone having their own copy. On the University systems,
+where I do not have superuser access, I load it into
+\texttt{/home/jcollins/lib/anaconda/anaconda3}.
+You need to note down the full path name as the installation script does not
+understand \texttt{\$HOME} or \~ constructs, much less environment variables
+such as \texttt{\$ANACONDA}.
+
+If you are installing to your own machine, you need to type (replacing the name
+of the {\anac} downloaded distribution appropriately).
+
+\begin{verbatim}
+sudo rm -rf /usr/local/anaconda
+sudo bash Anaconda3-2023.03-1-Linux-x86_64.sh
+\end{verbatim}
+
+You will be prompted for your password the first time. It is necessary to remove
+any previous version first to avoid being interrogated about it.
+
+If you are installing to the University machine, omit the \texttt{sudo} from
+those lines and use the correct directory in the first statement.
+
+In either case, be sure to put the full path name of the directory when asked
+for the installation location.
+
+After installing \anac, the installation script will ask:
+
+\begin{verbatim}
+installation finished.
+Do you wish the installer to initialize Anaconda3
+by running conda init? [yes|no]
+\end{verbatim}
+
+I strongly recommend that you answer ``no'' to this as it will silently fiddle
+with your \texttt{.profile}, \texttt{.login} or \texttt{.bashrc} scripts with
+possibly confusing results. In any case, if you are installing it as superuser
+on your own machine, it would fiddle with the \texttt{.profile} etc files for
+\texttt{root} which you certainly do not want.
+
+\subsubsection{Loading required {\py} modules}
+\protect\label{section:pymodules}
+
+As well as {\py} itself, you will need a number of modules upon which the
+software relies. Some of these are not supplied ``directly'', but via
+``channels'', i.e. as extensions of other modules. Modules used in the software
+are:
+
+\begin{tabular}{lll}
+Module&Description&Dependencies\\\hline
+astropy&Astronomy Utilities\\
+astroplan&Astronomy Utilities&astropy\\
+astroquery&Astronomy Utilities&astropy\\
+ephem&Ephemeris\\
+jplephem&Additional ephemeris&conda-forge\\
+mysql&Database access\\
+pymysql&Database access\\
+pathtools&Directory scan etc\\
+pandoc&Documentation utilities\\
+pylint&Scan python code for errors and inconsistencies\\
+sshtunnel&SSH access utilities&conda-forge\\\hline
+\end{tabular}
+
+\vspace{10pt}
+In addition, routines to calculate barycentric dates need to be installed using
+\texttt{pip} thus:
+
+\begin{verbatim}
+pip install git+https://github.com/shbhuk/barycorrpy.git -U
+\end{verbatim}
+
+A shell script \texttt{Lmods} to do all this is provided, possibly the initial
+path may need to be edited to set the location to which {\anac} is installed.
+
+\subsubsection{Setting up \$PATH and other environment variables}
+\protect\label{section:pathsetting}
+
+This is probably best described by reproducing what I have in my
+\texttt{.profile} file as follows, which irrelevant material omitted.
+\textbf{Please note that I only use ``bash'' and not ``csh'' and this will have to be rewritten for ``csh''.}
+
+\begin{verbatim}
+PYTHONPATH=$HOME/lib/pythonlib
+PERLLIB=$HOME/lib/perllib
+REMTMP=$HOME/src/astro/tmp
+REMLIB=$HOME/src/astro/remfits/lib
+
+for d in $HOME/src/astro/progs/Numpy/remfits{,2} \
+		 $HOME/src/astro/progs/Numpy/gsgraphics \
+		 $HOME/src/astro/bin \
+		 $HOME/src/astro/dlbins \
+		 $HOME/bin \
+		 do
+			if [ -d "$d" ] ; then
+    		PATH="$d:$PATH"
+    	    fi
+		 done
+unset d
+PATH=:$PATH
+export PYTHONPATH PERLLIB REMTMP REMLIB
+\end{verbatim}
+
+What this code does is as follows.
+
+Firstly it sets up environment variables pointing to directories used by the
+software. Then it sets up (notice that these are in reverse order as the script
+pre-pends the directories to the \texttt{\$PATH} variable) the required
+directories, followed by the other programs in the \texttt{astro/bin} and \texttt{astro/dlbins} directories.
+
+In my method of working, I like to include the contents of the current directory
+in the \texttt{\$PATH}, so I put \texttt{PATH=:\$PATH}. \textbf{You may not
+want to do this.}
+
+Finally the environment variables are set up to pass down to other software run
+subsequently with the \texttt{export} statement.
+
+\subsubsection{Aliases and program invocation}
+\protect\label{section:invocation}
+
+I have the following in my \texttt{.bashrc} file \textit{inter alia}.
+
+\begin{verbatim}
+ANACONDA=/usr/local/anaconda3
+ANACONDA3=/usr/local/anaconda3
+ANACONDALIB=$ANACONDA3/lib/python3.8
+ANACONDA3LIB=$ANACONDA3/lib/python3.8
+ANACPP=$ANACONDALIB:$ANACONDALIB/site-packages:$PYTHONPATH
+ANA3CPP=$ANACONDA3LIB:$ANACONDA3LIB/site-packages:$PYTHONPATH
+alias anac='PYTHONPATH=$ANACPP $ANACONDA/bin/python'
+alias ianac='PYTHONPATH=$ANACPP $ANACONDA/bin/ipython --pylab'
+alias anac3='PYTHONPATH=$ANA3CPP $ANACONDA3/bin/python'
+alias ianac3='PYTHONPATH=$ANA3CPP $ANACONDA3/bin/ipython --pylab'
+alias pylint="$ANACONDA/bin/pylint"
+\end{verbatim}
+
+This enables me to bring up an \textit{ipython} session just by typing:
+
+\begin{verbatim}
+ianac
+\end{verbatim}
+
+For a while I maintained a version 2 distribution, hence maintaining
+\texttt{ianac3}, in case I type that by mistake. If I want the ``plain'' \py, I
+just involve \texttt{anac}.
+
+The utility \texttt{pylint} is handy for checking for inconsistencies such as
+misspelled variables in files. (You may also want the utility \texttt{notrail}
+which cleans up redundant whitespace in files, which \texttt{pylint} moans
+about.)
+
+Don't forget you can save a lot of typing of commonly-used stuff by creating
+files in \texttt{\~.ipython/profile\_default/startup}, for example in this
+directory I have the file \texttt{50-astropy.ipy} containing:
+
+\begin{verbatim}
+from astropy.io import fits
+from astropy.utils.exceptions import AstropyWarning, AstropyUserWarning
+import astroquery.utils as autils
+import astropy.units as u
+from astropy import coordinates
+from astropy.time import Time
+import warnings
+
+warnings.simplefilter('ignore', AstropyWarning)
+warnings.simplefilter('ignore', AstropyUserWarning)
+warnings.simplefilter('ignore', UseWarning)
+autils.suppress_vo_warnings()
+\end{verbatim}
+
+This loads modules I often want and also turns off warning messages generated
+by \texttt{astropy} about obsolescent features in FITS files, which are
+included in many of the REM files.
+
+\subsubsection{Python invocation within scripts}
+\protect\label{section:pyinvocation}
+
+The {\py} scripts are invoked as programs, using the Linux program invocation
+mechanism, in that the first file marked executable of the specified name in the
+\texttt{\$PATH} variable is taken.
+
+\begin{enumerate}
+  \item If it is a binary, it is directly executed.
+  \item If the first line consists of the sequence
+  \texttt{\#!~/some/program/name}, then \texttt{/some/program/name} is run with
+  the script as first argument followed by the balance of the arguments.
+  \item Otherwise the shell is run with the script as the first argument
+  followed by the balance of the arguments.
+\end{enumerate}
+
+It is normal, therefore, for {\py} scripts to commence with the sequence.
+
+\begin{verbatim}
+#! /usr/bin/python
+\end{verbatim}
+
+However, if the intention is to run the {\anac} version rather than the
+``system'' version of \py, then this will fail. However, it would be a mistake
+to use something like
+
+\begin{verbatim}
+#! /usr/local/anaconda3/bin/python
+\end{verbatim}
+
+as this would beg the question of where {\anac} was installed. (Note that the
+\texttt{\#!} construct cannot decode environment variables such as
+\texttt{\$ANACONDA}.)
+
+The solution adopted was to put:
+
+\begin{verbatim}
+#! /usr/bin/env python3
+\end{verbatim}
+
+at the start of each file. The program \texttt{/usr/sbin/env} takes the first
+argument, interprets the \texttt{\$PATH} variable and looks for that, then
+running the program so found. By putting a shell script \texttt{python3} (and
+a similar \texttt{python}) in the user's directory \texttt{\~/bin}, then the
+appropriate version of {\py} is selected.
+
+My \texttt{\~/bin/python3} contains:
+
+\begin{verbatim}
+#! /bin/sh
+
+exec /usr/local/anaconda3/bin/python "$@"
+\end{verbatim}
+
+But in principle it could be set to choose the version of {\py} to run according
+to the context.
+
+\subsection{MySQL}
+\protect\label{section:mysql}
+
+The usage of {\mysql} avoids constructs different or absent between the versions
+of {\mysql} and \maria, in particular ``views''. No particular ISAM engine is
+specified.
+
+\subsubsection{Storage of FITS files}
+\protect\label{section:fitsstorage}
+
+I decided to store the actual FITS files in use in the database itself rather
+than having a separate file store. The reasons for doing this are that.
+
+\begin{enumerate}
+  \item The database store is and many systems separate and differently
+  controlled from the file system.
+  \item It is possible to manage separately the FITS files from from other
+  database rows. (This is described later in section \ref{section:indices}.)
+  \item Utilities such as \textit{locate}, \textit{slocate} and \textit{mlocate}
+  are rendered less useful if clogged by many similarly-named files.
+\end{enumerate}
+
+(It doesn't seem to be clearly documented anywhere, but it would have saved me
+some time if I'd known, so I include the following.)
+This may raise a problem with some versions of Linux which may restrict the locations of the data store used by \mysql. For
+example, on my computer, running  \textit{Ubuntu} Linux, I have a 3TB disk
+mounted on \texttt{/home2} for the purpose of holding {\mysql} files (under \texttt{/home2/mysql}).
+
+In order to provide for this, the data directory for {\mysql} is selected by
+inserting or adjusting the setting for the this in the file
+\texttt{/etc/mysql/mysql.conf.d/mysqld.cnf} to the following.
+
+\begin{verbatim}
+datadir	= /home2/mysql
+\end{verbatim}
+
+However this did not work at first, because there is a security module called
+\textit{apparmor} on some Linux systems including \textit{Ubuntu} which
+restricts the areas on the filesystem which a given subsystem can access,
+including via a symbolic link, as it operates by physical location. It is
+necessary to insert the following file as \texttt{/etc/apparmor.d/local/usr.sbin.mysqld}.
+
+\begin{verbatim}
+/home2/mysql/ r,
+/home2/mysql/** rwk
+\end{verbatim}
+
+Various systems will probably need to be restarted, not just \mysql, after
+doing this, possibly it is easiest to reboot.
+
+\subsubsection{Passwords for and access to \mysql}
+\protect\label{section:mysqlpw}
+
+I wanted to have a uniform access to the {\mysql} data regardless of whether I
+was using the shell tool, {\py} or Perl and whether the database being accessed
+was held locally, on a different system with direct network access, or via an
+SSH tunnel.
+
+I achieved this by creating a {\py} module \textit{dbops} with a simple
+interface:
+
+\begin{verbatim}
+import dbops
+......
+dbase = dbops.opendb('databasename')
+\end{verbatim}
+
+This returns a database connection to \texttt{databasename} after ``doing
+whatever is needed'' to achieve the connection.
+
+``Whatever is needed'' is set up in a file which can be one or more of:
+
+\begin{enumerate}
+  \item The file \texttt{/etc/dbcred.ini}.
+  \item The file \texttt{\$HOME/lib/dbcred.ini}, i.e. the file
+  \texttt{dbcred.ini} in \texttt{lib} directory in the user's home directory.
+  Probably this is the recommended version.
+  \item The file \texttt{.dbcred.ini} in the current directory when the program
+  is invoked.
+\end{enumerate}
+
+If there are conflicting entries in the various files, the files are read in
+that order so the last read entry will apply.
+
+\textbf{{\bomb} Note that this isn't very secure as passwords are stored in
+plain text but the assumption is made that the database contents are not highly secret and
+shared in an academic community who don't want to spend their time typing
+passwords. It is best not to use this for access to databases with sensitive
+information. Perhaps make sure that the files are not ``world readable'' at
+least.}
+
+The format of these files is in ``configuration file'' format and the contents
+are probably best illustrated by actual examples.
+
+I set up two versions of the database, one on the cluster, which I called
+\texttt{cluster} and one on my home machine, which I called \texttt{remfits}. I
+also needed to access the database for the red dots project, which I called
+\texttt{rdots}.
+
+The cluster database can only be accessed locally and an SSH tunnel has to be
+used to access it from outside. The other two databases can be accessed from
+outside.
+
+On the cluster, the file \texttt{\~/lib/dbcred.ini} contains the
+following.\footnote{Of course the passwords have been changed from the real
+ones.}
+
+\begin{verbatim}
+[DEFAULT]
+database=mydb
+host=localhost
+password=mypass
+remoteport=3306
+user=jmc
+
+[cluster]
+database=jcollins
+host=localhost
+password=ABCDEFGHIJ
+user=jcollins
+
+[rdots]
+database=REMImgs
+host=ross.iasfbo.inaf.it
+password=ANCDEFGHIJ
+user=rdots
+
+[remfits]
+database=remfits
+host=brute.jmc.me.uk
+password=ABCDEFGHIJ
+user=remupd
+\end{verbatim}
+
+On my home machine, the file \texttt{\~/lib/dbcred.ini} contains the following:
+
+\begin{verbatim}
+[DEFAULT]
+database=mydb
+host=localhost
+password=mypass
+remoteport=3306
+user=jmc
+
+[cluster]
+database=jcollins
+host=stri-cluster.herts.ac.uk
+localport=9999
+login=jcollins
+password=ABCDEFGHIJ
+user=jcollins
+
+[rdots]
+database=REMImgs
+host=ross.iasfbo.inaf.it
+password=ABCDEFGHIJ
+user=rdots
+
+[remfits]
+database=remfits
+host=localhost
+password=ABCDEFGHIJ
+user=remupd
+\end{verbatim}
+
+This illustrates the various cases. Where the database can be accessed directly,
+either on the local host or directly over the internet, 4 fields need to be
+defined. The \texttt{DEFAULT} section provides defaults if fields are omitted,
+the only important one is \texttt{remoteport}.
+
+\begin{description}
+\item[host] gives the host name (or IP address) which is \texttt{localhost}
+where it is the local machine.
+\item[database] gives the database name.
+\item[user] gives the user name on {\mysql} under which access is performed,
+which should not be confused with a Linux user name.
+\item[password] gives the {\mysql} password.
+\end{description}
+
+Access to \texttt{remfits} and \texttt{rdots} are examples of this in both
+cases, as is access to \texttt{cluster} on the cluster
+itself.\footnote{Possibly confusingly three fields are all \texttt{jcollins} on
+the cluster.}
+
+For SSH tunnels, three additional fields must also be supplied. These are
+
+\begin{description}
+\item[login] gives the Linux login name to log into the remote SSH server.
+\item[localport] gives the port number to allocate on the local server to access
+the SSH tunnel.
+\item[remoteport] gives the port number on the remote machine to provide a
+tunnel for. This is specified in the \texttt{DEFAULT} section as it is always 3306
+for \mysql.
+\end{description}
+
+Please note that I set up a key access system for SSH rather than passwords. In
+fact for security I disable SSH access from outside using passwords.

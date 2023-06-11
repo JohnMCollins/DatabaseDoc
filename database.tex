@@ -1,0 +1,561 @@
+\section{Database structure}
+\protect\label{section:databasestruct}
+
+In this section the layout of the database is described.
+
+\subsection{Indices}
+\protect\label{section:indices}
+
+I created a system of ``indices'' to quickly refer to:
+
+\begin{enumerate}
+  \item Observations, as \texttt{obsind},
+  \item Objects, as \texttt{objind}.
+  \item FITS files, usually as just \texttt{ind}.
+  \item Find results, usually as just \texttt{frind}.
+\end{enumerate}
+
+I had planned to extend this to processed image files, stored as a {\numpy} 3D
+array, with the first plane giving values and the second plane giving calculated
+standard deviations.
+
+The indices are stored as {\mysql} unsigned integers, with the field in the
+corresponding record ab auto-increment primary key. With apologies to those
+familiar with \mysql, this means that when a new record is created in the
+relevant table, unless the key value is supplied, which it is probably an error
+to do, a new unique value for the key is created and inserted into the record.
+This value can be fetched immediately afterwards within {\py} from the database
+``cursor'' from the field \texttt{lastrowid}, thus:
+
+\begin{verbatim}
+cursor.execute{"INSERT INTO .....")
+ind = cursor.lastrowid
+\end{verbatim}
+
+All of the library routines do this where appropriate.
+
+The reason for doing this is to give a fast reference to and database access of
+a record which has already been selected using other more complicated criteria,
+for example an observation with a particular date and time and filter do not have
+to be selected each time using those criteria, but only with the relevant index
+number.
+
+This is also useful for generating composite tables, for example if you wanted
+to list filter names, dates and aducounts for all the ADU counts currently
+calculated\footnote{This is probably not very sensible, but is only for a
+simple example.} you could use the statement\footnote{{\mysql} keywords are
+case-insensitive but conventionally I put them in upper case for improved
+readability.}:
+
+\begin{verbatim}
+SELECT filter,date_obs,aducount FROM obsinf INNER JOIN aducalc ON obsinf.obsind=aducalc.obsind
+\end{verbatim}
+
+This produces a combined table out of the selected fields of each table (you
+might have to qualify them with the table name in places as with the fields in
+the \texttt{ON} clause) where the given indices match.
+
+{\mysql} provides for ``views'' which predefine common cases of such
+\texttt{JOIN} operations but these are not compatible or portable between
+different versions of that and also \maria.
+
+\subsubsection{FITS files}
+\protect\label{section:fitsindex}
+
+A particularly important case of this is for storing FITS files in a
+table \texttt{fitsfile} separately from the observation data table
+\texttt{obsinf}.
+
+I did this because I wanted to store the FITS files in the database to avoid
+having a plethora of files with similar names on the disk. However manipulating
+the rows in a table containing large amounts of data can be very processor and
+disk intensive, especially if fields are being changed in the tables, so it
+makes sense to have minimal data alongside the FITS files apart from the files
+themselves, with the statistics put in the observation data table.
+
+So in the table \texttt{fitsfile} is stored \texttt{ind} which is an
+auto-increment unsigned int primary key, and the column \texttt{fitsgz}, which
+is a ``longblob'' type.
+
+In the table \texttt{obsinf} is stored the corresponding \texttt{ind}, not to be
+confused with \texttt{obsind} which is the index of the observation record. The
+\texttt{ind} value is used to look up the record in the \texttt{fitsfile} table
+to fetch the actual FITS file.
+
+If the FITS file for the observation is not stored in the database, then the
+value of \texttt{ind} will be zero. This will be the case for objects not in the
+Red Dots Project target list, for filters other than the \texttt{g}, \texttt{r},
+\texttt{i} and \texttt{z} and for missing or unusable images.
+
+The library routines are set up to transparently obtain the FITS file from the
+database if it is stored there, or to download the file directly if possible.
+
+Arrays of daily bias and flat files and standard master flat and bias files are
+also stored here.
+
+\subsubsection{{\numpy} arrays}
+\protect\label{section:numpyarrays}
+
+I had intended to move the storage of {\numpy} arrays to the database, for
+holding either arrays derived from images as 2 planes, with one plane of pixel
+values and the other of calculated standard error on a per-pixel basis, or bad
+pixel arrays.
+
+I had set up the table \texttt{stdarray} to this end but had not used it. The
+usage was similar to that of \texttt{fitsfile}.
+
+\subsection{Tables and usage in database}
+\protect\label{section:databasetabs}
+
+The following sections explain each of the various tables in the database and
+their various fields.
+
+\subsubsection{\texttt{obsinf} table}
+\protect\label{section:obsinf}
+
+The following fields are provided in the \texttt{obsinf} table.
+
+\begin{description}
+\item[\tt ind] is an integer giving the index of the FITS file data in the
+\texttt{fitsfile} table, or zero if there is none.
+\item[\tt serial] is the serial number of the observation in the Red Dots
+database.
+\item[\tt radeg] is the Right Ascension of the object in degrees.
+\item[\tt decdeg] is the Declination of the object in degrees.
+\item[\tt object] is the object name of the target as specified in the Red Dots
+database, not necessary the same as the object name used in other tables.
+\item[\tt dithID] is the dither pattern number, applicable to REMIR data and zero
+for the visible light filters.
+\item[\tt filter] is the filter name.
+\item[\tt date\_obs] is the observation date and time.
+\item[\tt mjdobs] is the observation date in modified Julian date format.
+\item[\tt bjdobs] is the same corrected for barycentric date and time.
+\item[\tt exptime] is the exposure time in seconds.
+\item[\tt gain] is the gain in the observation.
+\item[\tt seeing] is the seeing value.
+\item[\tt airmass] is the airmass value.
+\item[\tt moonphase] is the phase of the moon (between 0 and 1 if defined)
+\item[\tt moondist] is the distance of the moon from the target in degrees, up to
+180.
+\item[\tt quality] is a quality value, between 0 and 1 for the observation. Zero is
+completely unacceptable and 1 is maximum acceptability.
+\item[\tt rejreason] is a brief textual description of why the observation is
+unacceptable if it is to be ignored.
+\item[\tt \tt fname] is a short file name of the observation in the Red Dots
+project files.
+\item[\tt \tt ffname] is a full file name of the observation in the Red Dots project
+files.
+\item[\tt obsind] is the index of the observation, which is a unique unsigned
+primary key with auto-incremented value. It is used elsewhere to quickly look up
+the observation.
+\item[\tt orient] is a rough orientation of the image, from 0 to 3, with 0
+representing North at the top, 1 North on the left, 2 North at the bottom and 3
+North on the right.
+\item[\tt nrows] is the number of effective rows in the image.
+\item[\tt ncols] is the number of effective columns in the image.
+\item[\tt startx] is the starting column number on the CCD (bottom left) of the
+image. Columns are numbered from zero.
+\item[\tt starty] is the starting row number on the CCD (bottom left) of the image.
+Rows are numbered from zero.
+\item[\tt rowoffset] gives the possible fractional pixel row number by which the
+target centre differs from the position which it is supposed to be, expressed as
+where it is on the image minus where it is expected to be.
+\item[\tt coloffset] gives the possible fractional pixel column number by which the
+target centre differs from the position which it is supposed to be, expressed as
+where it is on the image minus where it is expected to be.
+\item[\tt minv] gives the minimum pixel value of the image.
+\item[\tt maxv] gives the maximum pixel value of the image.
+\item[\tt sidet] gives the number of pixels trimmed from each side of each image
+before calculating the mean and other statistics of the array.
+\item[\tt median] gives the median pixel value of the array.
+\item[\tt mean] gives the mean pixel value of the array.
+\item[\tt std] gives the standard deviation of the array.
+\item[\tt skew] gives the skewness of the array.
+\item[\tt kurt] gives the kurtosis of the array.
+\end{description}
+
+The last two fields are only included for consistency with the
+\texttt{iforbinf} tables which in turn are only maintained because they are
+used in the compilation of the Red Dots master flat files.
+
+Please see the documentation on the \textbf{listobs.py} utility in section
+\ref{section:listobs} for information on further using these fields for
+selection of images.
+
+\subsubsection{\texttt{iforbinf} table}
+\protect\label{section:iforbinf}
+
+The \texttt{iforbinf} table is used to store information about individual daily
+bias and flat images, with the information itself held in the \texttt{fitsfile}
+tan;e/
+
+\begin{description}
+\item[\tt ind] is an integer giving the index of the FITS file data in the
+\texttt{fitsfile} table, or zero if there is none.
+\item[\tt serial] is the serial number of the file in the Red Dots database.
+\item[\tt filter] is one of \texttt{g}, \texttt{i}, \texttt{r} and \texttt{z}
+and gives the filter in question. (They are only provided for these filters.)
+\item[\tt typ] (correctly spelt without an ``e'' to avoid clashes with {\mysql}
+keyword) gives the type of file in question \texttt{bias} or \texttt{flat}.
+There is provision for a type \texttt{dark} as these were originally also
+provided but none during the observation periods.
+\item[\tt date\_obs] gives the date and time of the image.
+\item[\tt mjdobs] gives the modified Julian date of the image.
+\item[\tt exptime] gives the exposure time of the image in seconds.
+\item[\tt gain] gives the gain setting.
+\item[\tt rejreason] is either null or gives a reason for rejecting the image.
+\item[\tt fname] is a short file name of the observation in the Red Dots
+project files.
+\item[\tt ffname] is a full file name of the observation in the Red Dots project
+files.
+\item[\tt iforbind] is the index of the file, which is a unique unsigned
+primary key with auto-incremented value. It is used elsewhere to quickly look up
+the file.
+\item[\tt nrows] is the number of effective rows in the image.
+\item[\tt ncols] is the number of effective columns in the image.
+\item[\tt startx] is the starting column number on the CCD (bottom left) of the
+image. Columns are numbered from zero.
+\item[\tt starty] is the starting row number on the CCD (bottom left) of the
+image. Rows are numbered from zero.
+\item[\tt minv] gives the minimum pixel value of the image.
+\item[\tt maxv] gives the maximum pixel value of the image.
+\item[\tt sidet] gives the number of pixels trimmed from each side of each image
+before calculating the mean and other statistics of the array.
+\item[\tt median] gives the median pixel value of the array.
+\item[\tt mean] gives the mean pixel value of the array.
+\item[\tt std] gives the standard deviation of the array.
+\item[\tt skew] gives the skewness of the array.
+\item[\tt kurt] gives the kurtosis of the array.
+\end{description}
+
+The last two fields are only included because they are used in the compilation of the Red Dots
+master flat files.\footnote{Although I believe that they are not calculated
+correctly in those files.}
+
+Please see the documentation on the \textbf{listiforb.py} utility in section
+\ref{section:listiforb} for information on further using these fields for
+selection of bias or flat files.
+
+\subsubsection{\texttt{forbinf} table}
+\protect\label{section:forbinf}
+
+The \texttt{forbinf} table is used to store details of the master flat and
+bias files provided by the Red Dots project with the actual FITS files stored in
+\texttt{fitsfile} and contains the following fields:
+
+\begin{description}
+\item[\tt year] Year for which stored, e.g. 2017, 2022.
+\item[\tt month] Month for which stores as 1 to 12.
+\item[\tt filter] is one of \texttt{g}, \texttt{i}, \texttt{r} and \texttt{z}
+and gives the filter in question. (They are only provided for these filters.)
+\item[\tt typ] (correctly spelt without an ``e'' to avoid clashes with {\mysql}
+keyword) gives the type of file in question \texttt{bias} or \texttt{flat}.
+\item[\tt gain] gives the gain setting.
+\item[\tt nrows] is the number of effective rows in the image.
+\item[\tt ncols] is the number of effective columns in the image.
+\item[\tt startx] is the starting column number on the CCD (bottom left) of the
+image. Columns are numbered from zero.
+\item[\tt starty] is the starting row number on the CCD (bottom left) of the
+image. Rows are numbered from zero.
+\item[\tt rejreason] is either null or gives a reason for rejecting the image.
+\item[\tt fitsind] (not \texttt{ind}, this is probably an inconsistency but
+not worth changing) is an integer giving the index of the FITS file data in the
+\texttt{fitsfile} table, or zero if there is none.
+\end{description}
+
+These files are not used ``in anger'' as I do not agree with the ways in which
+they are calculated, but are kept for reference.
+
+\subsubsection{\texttt{fitsfile} table}
+\protect\label{section:fitsfile}
+
+The \texttt{fitsfile} table is used to store FITS files for the \texttt{obsinf},
+\texttt{iforbinf} and \texttt{forbinf} tables and contains the following fields:
+
+\begin{description}
+\item[\tt ind] is the unsigned int used as an auto-incremented primary key to
+refer to each entries.
+\item[\tt side] gives the dimensions of the array and is either 512, indicating
+$512 \times 512$ or 1024 indicating $1024 \times 1024$.
+\item[\tt nrows] gives the number of rows in the array after trimming from the
+top any rows of zero elements.
+\item[\tt ncols] gives the number of columns in the array after trimming from
+the right any columns of zero elements.
+\item[\tt startx] gives the starting column number on the CCD (bottom left) of the
+image. Columns are numbered from zero.
+\item[\tt starty] is the starting row number on the CCD (bottom left) of the
+image. Rows are numbered from zero.
+\item[\tt fitsgz] is a ``longblob'' type giving the actual FITS file.
+\end{description}
+
+\subsubsection{\texttt{stdarray} table}
+\protect\label{section:stdarray}
+
+The \texttt{stdarray} table is used to store {\numpy} array files and contains
+the following fields:
+
+\begin{description}
+\item[\tt ind] is the unsigned int used as an auto-incremented primary key to
+refer to each entries.
+\item[\tt arrgz] is a ``longblob'' type giving the actual {\numpy} array file.
+\end{description}
+
+This table is not in use but is intended to hold processed image files after
+calculating the standard deviation for each pixel. It is also intended to hold
+bad pixel files. It was intended to move all these files to the database rather
+than as a huge collection on disk.
+
+\subsubsection{\texttt{objdata} table}
+\protect\label{section:obsdata}
+
+The following fields are provided in the \texttt{objdata} table to store details
+of objects.
+
+\begin{description}
+\item[\tt objname] is the name of the object used internally. Where several
+names are available, the shortest one is used, for example {\ross} is stored
+here as \texttt{GJ729}. (Other names are stored in the \texttt{objalias} table.)
+\item[\tt ind] is the unsigned integer auto-increment primary key used to
+identify the object elsewhere.
+\item[\tt objtype] is the type of the object, where known.
+\item[\tt dispname] is the ``display name'' of the object for when it is
+displayed as a text string, for example {\ross} is given as \texttt{Ross 154}.
+\item[\tt latexname] is the ``Latex name'' of the object, on the assumption that
+key objects such as \prox, {\bstar} and {\ross} are set up as the macros
+\texttt{\\prox}, \texttt{\\bstar} and \texttt{\\ross} respectively for inclusion
+of auto-generated tables and similar directly into a report.
+\item[\tt vicinity] gives the ``vicinity'' of the object for listing of possible
+objects close to one of the Red Dots project targets of \prox, {\bstar} and
+{\ross} respectively. These use the the same names as the \texttt{objname}
+field, for example if the object is in the vicinity of {\ross} then this field
+will contain \texttt{GJ729}.
+\item[\tt label] is a label to be used when images are displayed concentrating
+on a given target vicinity.
+The objects are sorted into order in of descending frequency in which they appear in images,
+then into descending overall brightness. After assigning all the targets the
+label \texttt{A}, labels are assigned \texttt{B}, \texttt{C} etc through to
+\texttt{Z} then \texttt{A1} through to \texttt{Z1}, then \texttt{A2} through to
+\texttt{Z2} and so forth.
+\item[\tt dist] is the distance in light years, where known.
+\item[\tt rv] is the radial velocity in km/s. A negative value indicates that it
+is approaching.
+\item[\tt radeg] is the Right Ascension in degrees. (0 to 360).
+\item[\tt rapm] is the proper motion of the Right Ascension of the object in
+milli-arcseconds/year.
+\item[\tt decdeg] is the Declination of the object in degrees (-90 to 90)
+\item[\tt decpm] is the proper motion of the Declination of the object in
+milli-arcseconds/year.
+\item[\tt gmag] gives the \texttt{g} filter magnitude of the object.
+\item[\tt imag] gives the \texttt{i} filter magnitude of the object.
+\item[\tt rmag] gives the \texttt{r} filter magnitude of the object.
+\item[\tt zmag] gives the \texttt{z} filter magnitude of the object.
+\item[\tt Hmag] gives the \texttt{H} filter magnitude of the object (this is
+currently unused by the software, but included for later processing of REMIR
+infrared images).
+\item[\tt Jmag] gives the \texttt{J} filter magnitude of the object (this is
+currently unused by the software, but included for later processing of REMIR
+infrared images).
+\item[\tt Kmag] gives the \texttt{K} filter magnitude of the object (this is
+currently unused by the software, but included for later processing of REMIR
+infrared images).
+\item[\tt gbri] gives the weighted average flux for images with the \texttt{g}
+filter.
+\item[\tt gbrisd] gives the standard deviation of flux for images with the
+\texttt{g} filter.
+\item[\tt ibri] gives the weighted average flux for images with the \texttt{i}
+filter.
+\item[\tt ibrisd] gives the standard deviation of flux for images with the
+\texttt{i} filter.
+\item[\tt rbri] gives the weighted average flux for images with the \texttt{r}
+filter.
+\item[\tt rbrisd] gives the standard deviation of flux for images with the
+\texttt{r} filter.
+\item[\tt zbri] gives the weighted average flux for images with the \texttt{z}
+filter.
+\item[\tt zbrisd] gives the standard deviation of flux for images with the
+\texttt{z} filter.
+\item[\tt Hbri] gives the weighted average flux for images with the \texttt{H}
+filter.
+\item[\tt Hbrisd] gives the standard deviation of flux for images with the
+\texttt{H} filter.
+\item[\tt Jbri] gives the weighted average flux for images with the \texttt{J}
+filter.
+\item[\tt Jbrisd] gives the standard deviation of flux for images with the
+\texttt{J} filter.
+\item[\tt Kbri] gives the weighted average flux for images with the \texttt{K}
+filter.
+\item[\tt Kbrisd] gives the standard deviation of flux for images with the
+\texttt{K} filter.
+\item[\tt apsize] gives the currently-calculated optimal aperture radius in
+pixels.
+\item[\tt irapsize] gives the currently-calculated optimal aperture radius for
+infra-red filters in pixels.
+\item[\tt apstd] gives the standard deviation of the currently-calculated
+optimal aperture radius.
+\item[\tt irapstd] gives the standard deviation of the currently-calculated
+optimal aperture radius for infrared filters.
+\item[\tt basedon] gives the number of observations that \texttt{apsize} is
+based upon.
+\item[\tt irbasedon] gives the number of observations that \texttt{irapsize} is
+based on.
+\item[\tt variability] gives the variability of the object as assessed by the
+software from 0 (none) to 1 (max).
+\item[\tt suppress] indicates that the object should for one reason or another
+be ignored in searches.
+\item[\tt invented] indicates that the name given is ``invented'' as the object
+does not appear in any catalogue currently scanned.
+\item[\tt usable] indicates that the object is potentially usable as a reference
+object.
+\end{description}
+
+There is some overlap between the meanings of \texttt{variability},
+\texttt{suppress} and \texttt{usable} which is documented where appropriate. The
+field \texttt{variability} is more flexible as it is on a sliding scale whereas
+the others are binary.
+
+\subsubsection{\texttt{objalias} table}
+\protect\label{section:objalias}
+
+The following fields are provided in the \texttt{objalias} table, to store
+details of alternative object names.
+
+\begin{description}
+\item[\tt objname] is the object name for which an alias is being given. This
+corresponds to \texttt{objname} in the \texttt{objdata} table, i.e. it is the
+shortest name (available when the tables were set up), for example {\ross} is stored
+here as \texttt{GJ729}, but an alias will be given as a row in this table,
+specifying {\ross} as an alias.
+\item[\tt alias] is the alias name. Note this is also a key to supply
+\item[\tt source] gives the source of the alias, for example ``Simbad'' or
+``Manually inserted''.
+\item[\tt sbok] indicates whether the alias is given in Simbad.
+\end{description}
+
+Most of the library routines are set up to transparently fetch the data for an
+object from the \texttt{objdata} table from whatever alias they are invoked by,
+by reference to the \texttt{objalias} table where necessary.
+
+\subsubsection{\texttt{objpm} table}
+\protect\label{section:objpm}
+
+The following fields are provided in the \texttt{objpm} table, used to keep a
+cache of proper motions so that they do not have to be continually recalculated.
+
+\begin{description}
+\item[\tt objind] gives the index of the object, as set up in the
+\texttt{objind} field of the \texttt{objdata} table.
+\item[\tt obsdate] gives the date upon which the item is based. (Not bothering
+with time).
+\item[\tt radeg] gives the Right Ascension in degrees.
+\item[\tt decdeg] gives the Declination in degrees.
+\end{description}
+
+
+\subsubsection{\texttt{objedit} table}
+\protect\label{section:objedit}
+
+The following fields are provided in the \texttt{objedit} table. This is used
+for storing pending changes to objects for performing together.
+
+\begin{description}
+\item[\tt ind] is an auto-increment unsigned integer primary key for referring
+to the operation.
+\item[\tt op] is one of the operations defined below.
+\item[\tt objind] is the index of the object being referred to.
+\item[\tt apsize] is an aperture size where relevant.
+\item[\tt nrow] is where relevant a row number in an image.
+\item[\tt ncol] is where relevant a column number in an image.
+\item[\tt radeg] is where relevant a Right Ascension value in an image.
+\item[\tt decdeg] is where relevant a Declination value in an image.
+\item[\tt done] indicates that the edit has been done.
+\item[\tt objname] is where relevant an object name.
+\item[\tt dispname] is where relevant a display name.
+\item[\tt latexname] is where relevant a Latex name.
+\item[\tt obsfile] is where relevant a full path to a file name for an image.
+\end{description}
+
+The \texttt{op} filed is one of:
+
+\begin{description}
+\item[\tt NEW] indicates that a new object (\texttt{objdata} entry) is to be
+created and the aperture calculated from the image supplied in
+\texttt{obsfile}. The coordinates are in the region delineated by \texttt{nrow}
+and \texttt{ncol}.
+\item[\tt NEWAP] indicates that a new object (\texttt{objdata} entry) is to be
+created and the aperture specified in \texttt{apsize}. The coordinates are in
+the region delineated by \texttt{nrow} and \texttt{ncol}.
+\item[\tt HIDE] indicates that the object specified is to be marked ``hidden''
+in the image.
+\item[\tt DELDISP] indicates that the display and Latex names are to be cleared
+and reset to the same as the \texttt{objname} field for the object.
+\item[\tt NEWDISP] indicates that the display and Latex names are to be set as
+specified.
+\item[\tt SETAP] indicates that the aperture size is to be set to that given by
+\texttt{apsize}.
+\item[\tt CALCAP] indicates that the aperture size is to be calculated from the
+image given in \texttt{obsfile}.
+\end{description}
+
+This probably wants revision as files are moved to the database.
+
+\subsubsection{\texttt{findresult} table}
+\protect\label{section:findresult}
+
+The following fields are provided in the \texttt{findresult} table, which is
+used to store details of search results.
+
+\begin{description}
+\item[\tt obsind] gives the observation index.
+\item[\tt objind] gives the object index.
+\item[\tt ind] is the table's own index for find results.
+\item[\tt nrow] gives the row number of the centre of the object (this actually
+might be fractional if the centre lies between pixels.)
+\item[\tt ncol] gives the column number of the centre of the object (this
+actually might be fractional if the centre lies between pixels.)
+\item[\tt radeg] gives the Right Ascension value in degrees.
+\item[\tt decdeg] gives the Declination value in degrees.
+\item[\tt rdiff] gives the difference from ``expected'' row number, i.e. where
+it actually is in the image minus what it is expected to be (this is ``on top''
+of \texttt{rowoffset} in the \texttt{obsinf} table).
+\item[\tt cdiff] gives the difference from ``expected'' column number, i.e.
+where it actually is in the image minus what it is expected to be (this is ``on top''
+of \texttt{rowoffset} in the \texttt{obsinf} table).
+\item[\tt xoffstd] gives the standard deviation in the calculation of
+\texttt{cdiff}.
+\item[\tt yoffstd] gives the standard deviation in the calculation of
+\texttt{rdiff}.
+\item[\tt amp] gives the calculated flux of the object (at the last
+calculation).
+\item[\tt sigma] gives the calculated standard deviation of the flux of the
+object (at the last calculation).
+\item[\tt ampstd] gives the standard deviation on the calculation of
+\texttt{amp}.
+\item[\tt sigmastd] gives the standard deviation on the calculation of
+\texttt{sigma}.
+\item[\tt apsize] gives the aperture size used.
+\item[\tt adus] gives the ADU count.
+\item[\tt modadus] gives the ADU count taken from the model in use.
+\item[\tt hide] indicates that thisi particular entry should be ignored for
+whatever reason.
+\end{description}
+
+\subsubsection{\texttt{aducalc} table}
+\protect\label{section:aducalc}
+
+The following fields are provided in the \texttt{aducalc} table. This records an
+actual flux calculation.
+
+\begin{description}
+\item[\tt objind] gives the object index.
+\item[\tt obsind] gives the observation index.
+\item[\tt frind] gives the index in the \texttt{findresult} table.
+\item[\tt calcdate] gives the date on which the value was calculated.
+\item[\tt skylevel] gives the calculated sky level.
+\item[\tt skystd] gives the sky level standard deviation.
+\item[\tt apsize] gives the aperture used.
+\item[\tt aducount] gives the ADU count recorded.
+\item[\tt aduerr] gives the standard deviation of the ADU count.
+\item[\tt modaducount] gives the ADU count from the model used.
+\item[\tt modaduerr] gives the standard deviation of the ADU count from the
+model.
+\end{description}
